@@ -37,7 +37,7 @@ class Item
             $productDescription = substr($product->getDescription(), 0, 1024);
         }
         return [
-            'reference' => $item->getSku(),
+            'reference' => $item->getProduct()->getId(),
             'name' => $item->getName(),
             'description' => $product->getDescription() ? substr($product->getDescription(), 0, 1024):"",
             'url' => $product->getProductUrl(),
