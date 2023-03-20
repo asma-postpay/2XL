@@ -76,7 +76,6 @@ class Confirmation extends Action
         $resultRedirect = $this->resultFactory->create(ResultFactory::TYPE_REDIRECT);
         $orderStatus = 'failure';
         $redirect = 'checkout/cart';
-        $comment = 'Authorized but not Captured';
 
         $status = $this->postpayAdapter->getSingleOrder($postpayOrderId)['status']  ;
 
@@ -113,6 +112,7 @@ class Confirmation extends Action
             );
             return $resultRedirect->setPath('checkout/onepage/success');
         } else {
+            $comment = 'Denied Transaction' ;
             $this->changeOrderStatus($order, $orderStatus, $comment);
             return $resultRedirect->setPath($redirect);
         }
@@ -165,11 +165,10 @@ class Confirmation extends Action
             }
             $failureStatus = $this->config->getCheckoutFailureStatus();
             if ($failureStatus === Order::STATE_CANCELED) {
-                $order->addCommentToStatusHistory('Canceled Order, due to.'.$comment);
+                $order->addCommentToStatusHistory('Canceled Order, due to: '.$comment);
                 $order->cancel()->save();
                 return $order;
             }
-
             $order->setState($failureStatus);
             $order->setStatus($failureStatus);
             $order->addCommentToStatusHistory($comment);
