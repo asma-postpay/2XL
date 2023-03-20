@@ -46,4 +46,6 @@ interface AdapterInterface
      * @throws \Postpay\Exceptions\ApiException
      */
     public function refund($id, $refundId, $amount);
+
+    public function getSingleOrder($orderId);
 }

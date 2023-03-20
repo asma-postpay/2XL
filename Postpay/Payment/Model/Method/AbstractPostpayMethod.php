@@ -153,6 +153,33 @@ abstract class AbstractPostpayMethod extends AbstractMethod
     }
 
     /**
+     * Capture an order.
+     *
+     * @param InfoInterface $payment
+     * @param float $amount
+     *
+     * @return $this
+     *
+     * @throws \Postpay\Exceptions\ApiException
+     */
+    public function getSingleOrder($orderId)
+    {
+
+        $response = $this->postpayAdapter->capture($orderId);
+
+        $payment->setTransactionId($id);
+        $payment->setIsTransactionClosed(false);
+        $payment->setTransactionAdditionalInfo(
+            Transaction::RAW_DETAILS,
+            [
+                'Status' => $response['status'],
+                'Amount' => (new Decimal($response['total_amount']))->toFloat()
+            ]
+        );
+        return $this;
+    }
+
+    /**
      * Refund a capture transaction.
      *
      * @param InfoInterface $payment

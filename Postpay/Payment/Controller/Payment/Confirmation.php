@@ -50,8 +50,8 @@ class Confirmation extends Action
         AdapterInterface $postpayAdapter,
         Order            $order,
         Config           $config,
-        LoggerInterface $logger,
-        OrderSender $orderSender
+        LoggerInterface  $logger,
+        OrderSender      $orderSender,
     )
     {
         parent::__construct($context);
@@ -68,68 +68,74 @@ class Confirmation extends Action
      */
     public function execute()
     {
-        $status = $this->request->getParam('status');
         $postpayOrderId = $this->request->getParam('order_id');
         $orderId = explode("-", $postpayOrderId)[0];
         $order = $this->order->loadByIncrementId($orderId);
         /** @var \Magento\Quote\Model\Quote\Payment $payment */
         $payment = $order->getPayment();
         $resultRedirect = $this->resultFactory->create(ResultFactory::TYPE_REDIRECT);
-        $orderStatus = 'success';
-        $redirect = 'checkout/onepage/success';
+        $orderStatus = 'failure';
+        $redirect = 'checkout/cart';
+        $comment = 'Authorized but not Captured';
 
-        if ($status === 'APPROVED') {
+        $status = $this->postpayAdapter->getSingleOrder($postpayOrderId)['status']  ;
+
+        if ($status === 'approved' || $status === 'captured') {
             try {
                 $response = $this->postpayAdapter->capture($postpayOrderId);
+                $amount = (new Decimal($response['total_amount']))->toFloat();
+                $comment = 'Captured amount of ' . $amount. ' ' . $response['currency'] . ' Transaction ID : . ' . $response['order_id'];
                 $payment->setTransactionId($orderId);
                 $payment->setIsTransactionClosed(true);
                 $payment->setTransactionAdditionalInfo(
                     Transaction::RAW_DETAILS,
                     [
                         'Status' => $response['status'],
-                        'Amount' => (new Decimal($response['total_amount']))->toFloat()
+                        'Amount' => $amount
                     ]
                 );
-                    $this->messageManager->addSuccessMessage(
-                        __('Your order Id %1. was created', $orderId)
-                    );
-                    $orderStatus = 'success';
-                    $redirect = 'checkout/onepage/success';
+                $this->messageManager->addSuccessMessage(
+                    __('Your order Id %1. was created', $orderId)
+                );
 
+                $this->changeOrderStatus($order, 'success', $comment);
+                return $resultRedirect->setPath('checkout/onepage/success');
             } catch (RESTfulException $exception) {
                 $this->messageManager->addErrorMessage(
                     __('Capture error. Id %1. Code: %2.', $orderId, $exception->getErrorCode())
                 );
-                $orderStatus = 'failure';
-                $redirect = 'checkout/cart';
+                $this->changeOrderStatus($order, $orderStatus, $exception->getErrorCode());
+                return $resultRedirect->setPath($redirect);
             }
+        } else if ($status === 'pending') {
+            $this->messageManager->addErrorMessage(
+                __('Order is created but payment is pending. Id %1. Code: %2.', $order->getIncrementId(), 'Pending Payment')
+            );
+            return $resultRedirect->setPath('checkout/onepage/success');
         } else {
-
-            $this->messageManager->addErrorMessage(
-                __('Unable to proceed with Postpay payment gateway. Id %1. Code: %2.', $orderId, $status)
-            );
-
-            $orderStatus = 'failure';
-            $redirect = 'checkout/cart';
+            $this->changeOrderStatus($order, $orderStatus, $comment);
+            return $resultRedirect->setPath($redirect);
         }
-
-        $this->changeOrderStatus($order, $orderStatus);
-        $emailSent = $this->sendEmail($order);
-        if(!$emailSent){
-            $this->messageManager->addErrorMessage(
-                __('Unable to Send Order Confirmation Email for order . Id %1.', $orderId)
-            );
-        }
-        return $resultRedirect->setPath($redirect);
     }
 
     /**
      * @param Order $order
      * @return bool
      */
-    public function sendEmail(Order $order){
+    public function sendEmail(Order $order)
+    {
         try {
-            $this->orderSender->send($order);
+            $sent = $this->orderSender->send($order);
+
+            if ($sent) {
+                $order->addCommentToStatusHistory('Email sent to the customer');
+            } else {
+                $this->messageManager->addErrorMessage(
+                    __('Unable to Send Order Confirmation Email for order . Id %1.', $order->getIncrementId())
+                );
+                $order->addCommentToStatusHistory('Unable to Send Order Confirmation Email for order');
+            }
+            $order->save();
         } catch (\Exception $e) {
             $this->logger->critical($e);
             return false;
@@ -143,28 +149,36 @@ class Confirmation extends Action
      * @param $status
      * @return Order|void
      */
-    public function changeOrderStatus(Order $order, $status)
+    public function changeOrderStatus(Order $order, $status, $comment)
     {
         try {
             if ($status === 'success') {
                 $successStatus = $this->config->getCheckoutSuccessStatus();
                 $order->setState($successStatus);
                 $order->setStatus($successStatus);
+                $order->addCommentToStatusHistory($comment);
                 $order->save();
+
+                $this->sendEmail($order);
+
                 return $order;
             }
             $failureStatus = $this->config->getCheckoutFailureStatus();
             if ($failureStatus === Order::STATE_CANCELED) {
+                $order->addCommentToStatusHistory('Canceled Order, due to.'.$comment);
                 $order->cancel()->save();
                 return $order;
             }
+
             $order->setState($failureStatus);
             $order->setStatus($failureStatus);
+            $order->addCommentToStatusHistory($comment);
             $order->save();
+
             return $order;
-        } catch (\Exception $exception){
+        } catch (\Exception $exception) {
             $this->messageManager->addErrorMessage(
-                __('Unable to save order. Id %1. Code: %2.', $order->getIncrementId(), $exception->getErrorCode())
+                __('Unable to change the status of the order. Id %1. Code: %2.', $order->getIncrementId(), $exception->getErrorCode())
             );
         }
     }

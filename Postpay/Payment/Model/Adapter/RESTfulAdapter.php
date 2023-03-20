@@ -25,6 +25,11 @@ class RESTfulAdapter extends ApiAdapter implements AdapterInterface
         return $this->request('POST', $path, $params);
     }
 
+    public function get($path ,  array $params = []){
+
+        return $this->request('GET', $path , $params);
+    }
+
     /**
      * @inheritdoc
      */
@@ -50,5 +55,10 @@ class RESTfulAdapter extends ApiAdapter implements AdapterInterface
             'refund_id' => $refundId,
             'amount' => self::decimal($amount)
         ]);
+    }
+
+    public function getSingleOrder($orderId)
+    {
+        return $this->get('/orders/' . $orderId);
     }
 }
