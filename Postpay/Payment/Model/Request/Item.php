@@ -26,24 +26,22 @@ class Item
      */
     public static function build(QuoteItem $item)
     {
-        $objectManager = ObjectManager::getInstance();
-        /** @var ProductFactory $productFactory */
-        $productFactory = $objectManager->get(ProductFactory::class);
-        $product = $productFactory->create()->load($item->getProductId());
-        /** @var Image $imageHelper */
-        $imageHelper = $objectManager->get(Image::class);
-        $productDescription = '';
-        if ($product->getDescription()) {
-            $productDescription = substr($product->getDescription(), 0, 1024);
-        }
-        return [
-            'reference' => $item->getProduct()->getId(),
-            'name' => $item->getName(),
-            'description' => $product->getDescription() ? substr($product->getDescription(), 0, 1024):"",
-            'url' => $product->getProductUrl(),
-            'image_url' => $imageHelper->init($product, 'product_base_image')->getUrl(),
-            'unit_price' => ApiAdapter::decimal($item->getBasePrice()),
-            'qty' => $item->getQty(),
-        ];
+          $objectManager = ObjectManager::getInstance();
+               $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+               $storeId = $storeManager->getStore()->getId();
+               $productRepository = $objectManager->get(\Magento\Catalog\Api\ProductRepositoryInterface::class);
+               $product = $productRepository->getById($item->getProductId(), false, $storeId);
+               /** @var Image $imageHelper */
+               $imageHelper = $objectManager->get(Image::class);
+
+               return [
+                   'reference' => $product->getId(),
+                   'name' => $product->getName(),
+                   'description' => $product->getDescription() ? substr($product->getDescription(), 0, 1024):"",
+                   'url' => $product->getProductUrl(),
+                   'image_url' => $imageHelper->init($product, 'product_base_image')->getUrl(),
+                   'unit_price' => ApiAdapter::decimal($item->getBasePrice()),
+                   'qty' => $item->getQty(),
+               ];
     }
 }
